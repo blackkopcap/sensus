@@ -16,6 +16,24 @@ const path = require('path');
 const DATA_FILE = path.join(process.cwd(), 'behavioral-data.json');
 const MAX_ENTRIES = 1000;
 
+// Multi-user support
+function getBehavioralFile(userId) {
+  if (!userId) userId = '_default';
+  const userDir = path.join(process.cwd(), 'sensus-data', 'users', userId);
+  const behavioralPath = path.join(userDir, 'behavioral.json');
+  
+  // Backward compatibility: if old file exists and new structure doesn't, read from old
+  if (userId === '_default' && fs.existsSync(DATA_FILE) && !fs.existsSync(behavioralPath)) {
+    return DATA_FILE;
+  }
+  
+  if (!fs.existsSync(userDir)) {
+    fs.mkdirSync(userDir, { recursive: true });
+  }
+  
+  return behavioralPath;
+}
+
 // --- Behavioral Markers ---
 
 const STRESS_MARKERS_RU = ['блин', 'задолбал', 'бесит', 'нахуй', 'пиздец', 'сука', 'ёбан', 'херня', 'заебал', 'дебил'];
@@ -26,8 +44,9 @@ const FATIGUE_PATTERNS = /[а-яa-z]{3,}\1{2,}|(.)\1{3,}/i; // repeated chars = 
 
 // --- Helpers ---
 
-function loadData() {
-  if (fs.existsSync(DATA_FILE)) return JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
+function loadData(userId) {
+  const dataFile = getBehavioralFile(userId);
+  if (fs.existsSync(dataFile)) return JSON.parse(fs.readFileSync(dataFile, 'utf8'));
   return {
     version: 1,
     entries: [],
@@ -38,9 +57,10 @@ function loadData() {
   };
 }
 
-function saveData(data) {
+function saveData(data, userId) {
   if (data.entries.length > MAX_ENTRIES) data.entries = data.entries.slice(-MAX_ENTRIES);
-  fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
+  const dataFile = getBehavioralFile(userId);
+  fs.writeFileSync(dataFile, JSON.stringify(data, null, 2));
 }
 
 function analyzeMessage(text) {
@@ -140,14 +160,21 @@ function updateStats(data, entry) {
 // --- Commands ---
 
 function cmdTrack(args) {
-  const message = args.filter(a => !a.startsWith('--')).join(' ');
-  if (!message) { console.error('Usage: node behavioral.js track "message"'); process.exit(1); }
+  // Extract --user parameter
+  let userId = null;
+  const userIdx = args.indexOf('--user');
+  if (userIdx !== -1 && args[userIdx + 1]) {
+    userId = args[userIdx + 1];
+  }
 
-  let data = loadData();
+  const message = args.filter(a => !a.startsWith('--') && a !== userId).join(' ');
+  if (!message) { console.error('Usage: node behavioral.js track "message" [--user <id>]'); process.exit(1); }
+
+  let data = loadData(userId);
   const entry = analyzeMessage(message);
   data.entries.push(entry);
   data = updateStats(data, entry);
-  saveData(data);
+  saveData(data, userId);
 
   console.log(JSON.stringify({
     ok: true,
@@ -164,7 +191,14 @@ function cmdTrack(args) {
 }
 
 function cmdReport(args) {
-  const data = loadData();
+  // Extract --user parameter
+  let userId = null;
+  const userIdx = args.indexOf('--user');
+  if (userIdx !== -1 && args[userIdx + 1]) {
+    userId = args[userIdx + 1];
+  }
+
+  const data = loadData(userId);
   const fmt = args.includes('--format') ? args[args.indexOf('--format') + 1] : 'summary';
 
   if (fmt === 'json') {
@@ -198,7 +232,7 @@ function cmdReport(args) {
   const shortCount = entries.filter(e => e.isShort).length;
   const longCount = entries.filter(e => e.isLong).length;
 
-  console.log(`=== Behavioral Report ===
+  console.log(`=== Behavioral Report${userId ? ` (${userId})` : ''} ===
 Messages analyzed: ${total}
 Average length: ${avgWords} words
 
@@ -218,7 +252,14 @@ Typo indicators: ${entries.filter(e => e.hasTypos).length}
 }
 
 function cmdTrends(args) {
-  const data = loadData();
+  // Extract --user parameter
+  let userId = null;
+  const userIdx = args.indexOf('--user');
+  if (userIdx !== -1 && args[userIdx + 1]) {
+    userId = args[userIdx + 1];
+  }
+
+  const data = loadData(userId);
   const dIdx = args.indexOf('--days');
   const days = dIdx !== -1 ? parseInt(args[dIdx + 1]) || 7 : 7;
 
@@ -235,8 +276,16 @@ function cmdTrends(args) {
   }
 }
 
-function cmdReset() {
-  if (fs.existsSync(DATA_FILE)) fs.unlinkSync(DATA_FILE);
+function cmdReset(args) {
+  // Extract --user parameter
+  let userId = null;
+  const userIdx = args.indexOf('--user');
+  if (userIdx !== -1 && args[userIdx + 1]) {
+    userId = args[userIdx + 1];
+  }
+
+  const dataFile = getBehavioralFile(userId);
+  if (fs.existsSync(dataFile)) fs.unlinkSync(dataFile);
   console.log(JSON.stringify({ ok: true, status: 'reset' }));
 }
 
@@ -247,15 +296,15 @@ switch (command) {
   case 'track':   cmdTrack(args); break;
   case 'report':  cmdReport(args); break;
   case 'trends':  cmdTrends(args); break;
-  case 'reset':   cmdReset(); break;
+  case 'reset':   cmdReset(args); break;
   default:
     console.log(`Behavioral Analytics for Sensus
 
 Usage:
-  node behavioral.js track "message"         Track a message
-  node behavioral.js report [--format X]     View report (summary|json)
-  node behavioral.js trends [--days N]       View daily trends
-  node behavioral.js reset                   Clear all data
+  node behavioral.js track "message" [--user <id>]      Track a message
+  node behavioral.js report [--format X] [--user <id>]   View report (summary|json)
+  node behavioral.js trends [--days N] [--user <id>]     View daily trends
+  node behavioral.js reset [--user <id>]                 Clear all data
 
 Tracks: message patterns, stress markers, energy levels,
         activity hours, tone distribution, fatigue indicators.`);

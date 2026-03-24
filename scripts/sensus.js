@@ -15,7 +15,21 @@
 const fs = require('fs');
 const path = require('path');
 
-const STATE_FILE = path.join(process.cwd(), 'sensus-state.json');
+const STATE_FILE = path.join(process.cwd(), 'sensus-data', 'agent-state.json');
+const OLD_STATE_FILE = path.join(process.cwd(), 'sensus-state.json');
+
+// Migrate old state file to new location
+function migrateAgentState() {
+  const sensusDataDir = path.join(process.cwd(), 'sensus-data');
+  if (!fs.existsSync(sensusDataDir)) {
+    fs.mkdirSync(sensusDataDir, { recursive: true });
+  }
+  
+  if (fs.existsSync(OLD_STATE_FILE) && !fs.existsSync(STATE_FILE)) {
+    fs.copyFileSync(OLD_STATE_FILE, STATE_FILE);
+    console.error(`[sensus] Migrated agent state: ${OLD_STATE_FILE} → ${STATE_FILE}`);
+  }
+}
 const PROFILE_FILE = path.join(process.cwd(), 'human-profile.json');
 const MAX_HISTORY = 200;
 
@@ -197,6 +211,7 @@ function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
 function round(v, d = 3) { return Math.round(v * 10**d) / 10**d; }
 
 function loadState() {
+  migrateAgentState(); // Ensure migration happens
   if (!fs.existsSync(STATE_FILE)) return null;
   return JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
 }
@@ -233,6 +248,8 @@ function applyDecay(state, nowMs) {
 // --- Commands ---
 
 function cmdInit(args) {
+  migrateAgentState(); // Ensure directory exists
+
   let baselines = {};
   const bIdx = args.indexOf('--baseline');
   if (bIdx !== -1 && args[bIdx + 1]) {
@@ -280,7 +297,7 @@ function cmdInit(args) {
 
 function cmdRead(args) {
   let state = loadState();
-  if (!state) { console.error('No sensus-state.json. Run: node sensus.js init'); process.exit(1); }
+  if (!state) { console.error('No agent state found. Run: node sensus.js init'); process.exit(1); }
 
   state = applyDecay(state, Date.now());
   
@@ -337,7 +354,7 @@ function cmdRead(args) {
 
 function cmdEvent(args) {
   let state = loadState();
-  if (!state) { console.error('No sensus-state.json. Run: node sensus.js init'); process.exit(1); }
+  if (!state) { console.error('No agent state found. Run: node sensus.js init'); process.exit(1); }
 
   const tIdx = args.indexOf('--type');
   if (tIdx === -1 || !args[tIdx + 1]) {
@@ -402,7 +419,7 @@ function cmdEvent(args) {
 
 function cmdTick(args) {
   let state = loadState();
-  if (!state) { console.error('No sensus-state.json. Run: node sensus.js init'); process.exit(1); }
+  if (!state) { console.error('No agent state found. Run: node sensus.js init'); process.exit(1); }
 
   const mIdx = args.indexOf('--minutes');
   const minutes = mIdx !== -1 ? parseFloat(args[mIdx + 1]) || 30 : 30;
@@ -424,7 +441,7 @@ function cmdTick(args) {
 
 function cmdHistory(args) {
   const state = loadState();
-  if (!state) { console.error('No sensus-state.json. Run: node sensus.js init'); process.exit(1); }
+  if (!state) { console.error('No agent state found. Run: node sensus.js init'); process.exit(1); }
 
   const lIdx = args.indexOf('--limit');
   const limit = lIdx !== -1 ? parseInt(args[lIdx + 1]) || 10 : 10;
@@ -433,7 +450,7 @@ function cmdHistory(args) {
 
 function cmdReset() {
   let state = loadState();
-  if (!state) { console.error('No sensus-state.json. Run: node sensus.js init'); process.exit(1); }
+  if (!state) { console.error('No agent state found. Run: node sensus.js init'); process.exit(1); }
 
   const before = { ...state.hormones };
   for (const k of Object.keys(HORMONES)) {

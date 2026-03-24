@@ -4,6 +4,7 @@ limbic-config.json
 behavioral-data.json
 activity-config.json
 activity-log.json
+sensus-data/
 *.skill
 *.backup.json
 node_modules/

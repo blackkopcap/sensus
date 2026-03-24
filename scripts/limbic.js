@@ -20,6 +20,37 @@ const CONFIG_FILE = path.join(process.cwd(), 'limbic-config.json');
 const PROFILE_FILE = path.join(process.cwd(), 'human-profile.json');
 const SENSUS_BIN = path.join(__dirname, 'sensus.js');
 
+// Multi-user support
+function getUserProfilePath(userId) {
+  if (!userId) userId = '_default';
+  const userDir = path.join(process.cwd(), 'sensus-data', 'users', userId);
+  return {
+    userDir,
+    profilePath: path.join(userDir, 'profile.json'),
+    behavioralPath: path.join(userDir, 'behavioral.json')
+  };
+}
+
+function ensureUserDir(userDir) {
+  if (!fs.existsSync(userDir)) {
+    fs.mkdirSync(userDir, { recursive: true });
+  }
+}
+
+function getProfileFile(userId) {
+  const { userDir, profilePath } = getUserProfilePath(userId);
+  
+  // Backward compatibility: if old file exists and new structure doesn't, read from old
+  if (!userId || userId === '_default') {
+    if (fs.existsSync(PROFILE_FILE) && !fs.existsSync(profilePath)) {
+      return PROFILE_FILE;
+    }
+  }
+  
+  ensureUserDir(userDir);
+  return profilePath;
+}
+
 const DEFAULT_CONFIG = {
   model: 'gemma3:1b',
   ollamaUrl: 'http://localhost:11434',
@@ -111,15 +142,17 @@ function saveConfig(cfg) {
   fs.writeFileSync(CONFIG_FILE, JSON.stringify(cfg, null, 2));
 }
 
-function loadProfile() {
-  if (fs.existsSync(PROFILE_FILE)) {
-    return JSON.parse(fs.readFileSync(PROFILE_FILE, 'utf8'));
+function loadProfile(userId) {
+  const profileFile = getProfileFile(userId);
+  if (fs.existsSync(profileFile)) {
+    return JSON.parse(fs.readFileSync(profileFile, 'utf8'));
   }
   return { version: 1, traits: {}, patterns: {}, observations: [], lastAnalyzed: null };
 }
 
-function saveProfile(profile) {
-  fs.writeFileSync(PROFILE_FILE, JSON.stringify(profile, null, 2));
+function saveProfile(profile, userId) {
+  const profileFile = getProfileFile(userId);
+  fs.writeFileSync(profileFile, JSON.stringify(profile, null, 2));
 }
 
 function ollamaGenerate(cfg, prompt) {
@@ -244,15 +277,22 @@ function getRecentObservations(profile, count = 3) {
 async function cmdAnalyze(args) {
   const cfg = loadConfig();
 
+  // Extract --user parameter
+  let userId = null;
+  const userIdx = args.indexOf('--user');
+  if (userIdx !== -1 && args[userIdx + 1]) {
+    userId = args[userIdx + 1];
+  }
+
   let message;
   if (args.includes('--stdin')) {
     message = fs.readFileSync('/dev/stdin', 'utf8').trim();
   } else {
-    message = args.filter(a => !a.startsWith('--')).join(' ');
+    message = args.filter(a => !a.startsWith('--') && a !== userId).join(' ');
   }
 
   if (!message) {
-    console.error('Usage: node limbic.js analyze "message text"');
+    console.error('Usage: node limbic.js analyze "message text" [--user <id>]');
     process.exit(1);
   }
 
@@ -262,11 +302,12 @@ async function cmdAnalyze(args) {
     const behavioralBin = path.join(__dirname, 'behavioral.js');
     const sensusDir = path.join(__dirname, '..');
     const safeMsg = message.replace(/"/g, '\\"').replace(/\n/g, ' ').slice(0, 300);
-    execS(`node "${behavioralBin}" track "${safeMsg}"`, { cwd: sensusDir, encoding: 'utf8', timeout: 3000, stdio: 'ignore' });
+    const userArg = userId ? ` --user "${userId}"` : '';
+    execS(`node "${behavioralBin}" track "${safeMsg}"${userArg}`, { cwd: sensusDir, encoding: 'utf8', timeout: 3000, stdio: 'ignore' });
   } catch {}
 
   // Gather contextual information
-  const profile = loadProfile();
+  const profile = loadProfile(userId);
   const timeOfDay = getTimeOfDay();
   const hormoneState = getCurrentHormoneState();
   const recentObservations = getRecentObservations(profile);
@@ -338,7 +379,7 @@ async function cmdAnalyze(args) {
 
   // Update human profile
   if (analysis.profile_observation && analysis.profile_observation !== 'null') {
-    const profile = loadProfile();
+    const profile = loadProfile(userId);
     profile.observations.push({
       ts: new Date().toISOString(),
       observation: analysis.profile_observation,
@@ -348,7 +389,7 @@ async function cmdAnalyze(args) {
       profile.observations = profile.observations.slice(-cfg.maxProfileObservations);
     }
     profile.lastAnalyzed = new Date().toISOString();
-    saveProfile(profile);
+    saveProfile(profile, userId);
   }
 
   // Read current state
@@ -367,11 +408,18 @@ async function cmdAnalyze(args) {
 }
 
 function cmdProfile(args) {
-  const profile = loadProfile();
+  // Extract --user parameter
+  let userId = null;
+  const userIdx = args.indexOf('--user');
+  if (userIdx !== -1 && args[userIdx + 1]) {
+    userId = args[userIdx + 1];
+  }
+
+  const profile = loadProfile(userId);
   const fmt = args.includes('--format') ? args[args.indexOf('--format') + 1] : 'json';
 
   if (fmt === 'summary') {
-    console.log('=== Human Profile ===');
+    console.log(`=== Human Profile${userId ? ` (${userId})` : ''} ===`);
     console.log(`Observations: ${profile.observations.length}`);
     console.log(`Last analyzed: ${profile.lastAnalyzed || 'never'}`);
     if (profile.traits && Object.keys(profile.traits).length) {
@@ -391,9 +439,17 @@ function cmdProfile(args) {
   }
 }
 
-async function cmdConsolidate() {
+async function cmdConsolidate(args) {
   const cfg = loadConfig();
-  const profile = loadProfile();
+
+  // Extract --user parameter
+  let userId = null;
+  const userIdx = args.indexOf('--user');
+  if (userIdx !== -1 && args[userIdx + 1]) {
+    userId = args[userIdx + 1];
+  }
+
+  const profile = loadProfile(userId);
 
   if (!profile.observations || profile.observations.length === 0) {
     console.log(JSON.stringify({ ok: true, message: 'No observations to consolidate' }, null, 2));
@@ -442,7 +498,7 @@ Based on these observations, update the profile with consistent traits and patte
     }
     
     profile.lastConsolidated = new Date().toISOString();
-    saveProfile(profile);
+    saveProfile(profile, userId);
 
     console.log(JSON.stringify({
       ok: true,
@@ -478,17 +534,17 @@ const [,, command, ...args] = process.argv;
 switch (command) {
   case 'analyze':     cmdAnalyze(args); break;
   case 'profile':     cmdProfile(args); break;
-  case 'consolidate': cmdConsolidate(); break;
+  case 'consolidate': cmdConsolidate(args); break;
   case 'configure':   cmdConfigure(args); break;
   default:
     console.log(`Limbic — The Mediator (Amygdala)
 
 Usage:
-  node limbic.js analyze "message text"       Analyze message, update hormones & profile
-  node limbic.js analyze --stdin              Read message from stdin
-  node limbic.js profile [--format json|summary]  View human profile
-  node limbic.js consolidate                  Consolidate observations into traits/patterns
-  node limbic.js configure [--model X] [--url Y]  Configure LLM
+  node limbic.js analyze "message text" [--user <id>]     Analyze message, update hormones & profile
+  node limbic.js analyze --stdin [--user <id>]            Read message from stdin
+  node limbic.js profile [--format json|summary] [--user <id>]  View human profile
+  node limbic.js consolidate [--user <id>]                Consolidate observations into traits/patterns
+  node limbic.js configure [--model X] [--url Y]          Configure LLM
 
 Default model: ${DEFAULT_CONFIG.model}
 Default Ollama: ${DEFAULT_CONFIG.ollamaUrl}`);
