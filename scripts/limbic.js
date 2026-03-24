@@ -26,6 +26,37 @@ const DEFAULT_CONFIG = {
   maxProfileObservations: 50,
 };
 
+// Synonym mapping for fuzzy matching of events
+const SYNONYM_MAP = {
+  thankfulness: 'gratitude',
+  request: 'idle',
+  assessment: 'curiosity', 
+  ambition: 'curiosity',
+  problem_description: 'frustration',
+  time_delay: 'idle',
+  confirmation: 'calm',
+  support: 'trust',
+  personal_matter: 'trust',
+  question: 'curiosity',
+  risk_taking: 'curiosity',
+  card_deck: 'idle',
+  trust_expression: 'trust',
+  seeking_reassurance: 'trust',
+  appreciation: 'gratitude',
+  excitement: 'success',
+  bug_issue: 'frustration',
+  risk_seeking: 'curiosity',
+  problem_solving: 'deep_work',
+  technical_issue: 'frustration'
+};
+
+// Valid event types from sensus.js
+const VALID_EVENTS = [
+  'praise', 'criticism', 'humor', 'conflict', 'deep_work', 'success', 'failure', 
+  'curiosity', 'boredom', 'trust', 'rejection', 'urgency', 'calm', 'gratitude', 
+  'frustration', 'idle'
+];
+
 const SYSTEM_PROMPT = `You are an emotional analysis module (limbic system) for an AI agent.
 Given a human's message, output ONLY valid JSON with these fields:
 
@@ -118,6 +149,24 @@ function execSensus(args) {
   }
 }
 
+function saveEmotionalMemory(eventType, description, intensity) {
+  const { execSync } = require('child_process');
+  try {
+    const home = process.env.HOME || '/Users/' + process.env.USER;
+    const memoryBin = path.join(home, '.pyenv/shims/memory');
+    const safeDesc = description.replace(/"/g, '\\"').replace(/\n/g, ' ').slice(0, 200);
+    const safeTitle = `Emotional event: ${eventType}`;
+    execSync(`"${memoryBin}" save --title "${safeTitle}" --what "${safeDesc}" --category context --tags "sensus,emotion,${eventType}" --project openclaw`, {
+      encoding: 'utf8', timeout: 10000, stdio: 'ignore'
+    });
+    return true;
+  } catch (e) {
+    // Don't break the main flow if memory CLI is unavailable
+    console.error(`[limbic] Failed to save emotional memory: ${e.message}`);
+    return false;
+  }
+}
+
 function parseJSON(text) {
   // Try to extract JSON from response (model might add markdown)
   const jsonMatch = text.match(/\{[\s\S]*\}/);
@@ -129,7 +178,50 @@ function parseJSON(text) {
   return null;
 }
 
+function normalizeEventType(eventType) {
+  // Check if event type is valid
+  if (VALID_EVENTS.includes(eventType)) {
+    return eventType;
+  }
+  
+  // Check synonym map
+  if (SYNONYM_MAP[eventType]) {
+    return SYNONYM_MAP[eventType];
+  }
+  
+  // Unknown event type
+  return null;
+}
+
 // --- Commands ---
+
+function getTimeOfDay() {
+  const hour = new Date().getHours();
+  if (hour >= 6 && hour < 12) return 'morning';
+  if (hour >= 12 && hour < 17) return 'afternoon';  
+  if (hour >= 17 && hour < 22) return 'evening';
+  return 'night';
+}
+
+function getCurrentHormoneState() {
+  try {
+    const state = execSensus('read --format prompt');
+    if (state && !state.error) {
+      // Extract sensus prompt line 
+      return state;
+    }
+  } catch (e) {
+    // Ignore errors
+  }
+  return 'unknown';
+}
+
+function getRecentObservations(profile, count = 3) {
+  if (!profile.observations || profile.observations.length === 0) {
+    return [];
+  }
+  return profile.observations.slice(-count).map(obs => obs.observation);
+}
 
 async function cmdAnalyze(args) {
   const cfg = loadConfig();
@@ -146,10 +238,39 @@ async function cmdAnalyze(args) {
     process.exit(1);
   }
 
-  // Call Ollama
+  // Track behavioral analytics
+  try {
+    const { execSync: execS } = require('child_process');
+    const behavioralBin = path.join(__dirname, 'behavioral.js');
+    const sensusDir = path.join(__dirname, '..');
+    const safeMsg = message.replace(/"/g, '\\"').replace(/\n/g, ' ').slice(0, 300);
+    execS(`node "${behavioralBin}" track "${safeMsg}"`, { cwd: sensusDir, encoding: 'utf8', timeout: 3000, stdio: 'ignore' });
+  } catch {}
+
+  // Gather contextual information
+  const profile = loadProfile();
+  const timeOfDay = getTimeOfDay();
+  const hormoneState = getCurrentHormoneState();
+  const recentObservations = getRecentObservations(profile);
+  
+  // Build context prefix
+  const contextParts = [`time=${timeOfDay}`];
+  
+  if (typeof hormoneState === 'string' && hormoneState !== 'unknown') {
+    contextParts.push(`state=${hormoneState}`);
+  }
+  
+  if (recentObservations.length > 0) {
+    contextParts.push(`recent_traits: ${recentObservations.join(', ')}`);
+  }
+  
+  const contextPrefix = `[context: ${contextParts.join(', ')}]`;
+  
+  // Call Ollama with enhanced prompt
   let analysis;
   try {
-    const raw = await ollamaGenerate(cfg, `Analyze this message:\n"${message}"`);
+    const enhancedMessage = `${contextPrefix} Analyze this message:\n"${message}"`;
+    const raw = await ollamaGenerate(cfg, enhancedMessage);
     analysis = parseJSON(raw);
     if (!analysis) {
       console.error('Failed to parse LLM response:', raw.slice(0, 300));
@@ -161,13 +282,38 @@ async function cmdAnalyze(args) {
     process.exit(1);
   }
 
-  // Apply events to sensus
+  // Apply events to sensus with fuzzy matching
   const eventResults = [];
   if (analysis.events && Array.isArray(analysis.events)) {
     for (const ev of analysis.events) {
       if (ev.type && ev.intensity) {
-        const r = execSensus(`event --type ${ev.type} --intensity ${ev.intensity}`);
-        eventResults.push({ ...ev, result: r.ok ? 'applied' : r.error });
+        const normalizedType = normalizeEventType(ev.type);
+        
+        if (normalizedType) {
+          const r = execSensus(`event --type ${normalizedType} --intensity ${ev.intensity}`);
+          
+          // Save to emotional memory if intensity >= 0.7 (strong emotion)
+          if (ev.intensity >= 0.7) {
+            const description = `Strong ${normalizedType} event (intensity: ${ev.intensity}) from message: "${message.slice(0, 100)}"`;
+            saveEmotionalMemory(normalizedType, description, ev.intensity);
+          }
+          
+          eventResults.push({ 
+            originalType: ev.type, 
+            normalizedType, 
+            intensity: ev.intensity,
+            result: r.ok ? 'applied' : r.error 
+          });
+        } else {
+          // Unknown event type - skip and log to stderr
+          console.error(`[limbic] Unknown event type "${ev.type}" - skipping`);
+          eventResults.push({ 
+            originalType: ev.type, 
+            normalizedType: null,
+            intensity: ev.intensity,
+            result: 'skipped_unknown' 
+          });
+        }
       }
     }
   }
@@ -227,6 +373,73 @@ function cmdProfile(args) {
   }
 }
 
+async function cmdConsolidate() {
+  const cfg = loadConfig();
+  const profile = loadProfile();
+
+  if (!profile.observations || profile.observations.length === 0) {
+    console.log(JSON.stringify({ ok: true, message: 'No observations to consolidate' }, null, 2));
+    return;
+  }
+
+  const consolidationPrompt = `You are analyzing a human's communication patterns and traits based on observations.
+
+Observations:
+${profile.observations.map(obs => `- [${obs.ts.slice(0, 10)}] ${obs.observation}`).join('\n')}
+
+Based on these observations, update the profile with consistent traits and patterns. Output ONLY valid JSON:
+
+{
+  "traits": {
+    "communication_style": "<formal|informal|technical|casual>",
+    "emotional_baseline": "<stable|volatile|optimistic|pessimistic>", 
+    "decision_making": "<analytical|intuitive|careful|impulsive>",
+    "stress_response": "<calm|reactive|withdrawn|aggressive>",
+    "humor_preference": "<dry|playful|sarcastic|none>",
+    "energy_pattern": "<consistent|variable|morning_person|night_owl>"
+  },
+  "patterns": {
+    "common_topics": ["<topic1>", "<topic2>"],
+    "interaction_frequency": "<high|medium|low>",
+    "feedback_style": "<direct|diplomatic|encouraging|critical>",
+    "problem_solving_approach": "<methodical|creative|collaborative|independent>"
+  }
+}`;
+
+  try {
+    const raw = await ollamaGenerate(cfg, consolidationPrompt);
+    const analysis = parseJSON(raw);
+    
+    if (!analysis) {
+      console.error('Failed to parse consolidation response:', raw.slice(0, 300));
+      process.exit(1);
+    }
+
+    // Update profile with consolidated traits and patterns
+    if (analysis.traits) {
+      profile.traits = { ...profile.traits, ...analysis.traits };
+    }
+    if (analysis.patterns) {
+      profile.patterns = { ...profile.patterns, ...analysis.patterns };
+    }
+    
+    profile.lastConsolidated = new Date().toISOString();
+    saveProfile(profile);
+
+    console.log(JSON.stringify({
+      ok: true,
+      message: 'Profile consolidated',
+      observations_processed: profile.observations.length,
+      traits_updated: Object.keys(analysis.traits || {}).length,
+      patterns_updated: Object.keys(analysis.patterns || {}).length
+    }, null, 2));
+
+  } catch (e) {
+    console.error(`Consolidation error: ${e.message}`);
+    process.exit(1);
+  }
+}
+
 function cmdConfigure(args) {
   const cfg = loadConfig();
 
@@ -245,9 +458,10 @@ function cmdConfigure(args) {
 const [,, command, ...args] = process.argv;
 
 switch (command) {
-  case 'analyze':   cmdAnalyze(args); break;
-  case 'profile':   cmdProfile(args); break;
-  case 'configure': cmdConfigure(args); break;
+  case 'analyze':     cmdAnalyze(args); break;
+  case 'profile':     cmdProfile(args); break;
+  case 'consolidate': cmdConsolidate(); break;
+  case 'configure':   cmdConfigure(args); break;
   default:
     console.log(`Limbic — The Mediator (Amygdala)
 
@@ -255,6 +469,7 @@ Usage:
   node limbic.js analyze "message text"       Analyze message, update hormones & profile
   node limbic.js analyze --stdin              Read message from stdin
   node limbic.js profile [--format json|summary]  View human profile
+  node limbic.js consolidate                  Consolidate observations into traits/patterns
   node limbic.js configure [--model X] [--url Y]  Configure LLM
 
 Default model: ${DEFAULT_CONFIG.model}

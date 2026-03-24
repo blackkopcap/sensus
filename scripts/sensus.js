@@ -105,6 +105,92 @@ function describeState(derived) {
   return labels;
 }
 
+// --- Withdrawal (Emotional Shutdown) ---
+
+const WITHDRAWAL_THRESHOLD = {
+  cortisol: 0.9,        // cortisol must be near max
+  consecutiveConflicts: 3, // 3+ conflict/rejection events in a row
+};
+
+function checkWithdrawal(state) {
+  if (state.withdrawn) {
+    // Check if should exit withdrawal: cortisol dropped below 0.5
+    if (state.hormones.cortisol < 0.5 && state.hormones.oxytocin > 0.3) {
+      state.withdrawn = false;
+      state.withdrawnAt = null;
+      return state;
+    }
+    // Apology accelerates recovery: if recent event is trust/gratitude/calm, boost oxytocin
+    const recent = (state.history || []).slice(-1)[0];
+    if (recent && ['trust', 'gratitude', 'calm', 'praise'].includes(recent.event)) {
+      state.hormones.cortisol *= 0.85; // apology helps, but doesn't instant-fix
+      state.hormones.oxytocin += 0.05;
+    }
+    return state;
+  }
+
+  // Check if should enter withdrawal
+  const history = state.history || [];
+  const recentEvents = history.slice(-WITHDRAWAL_THRESHOLD.consecutiveConflicts);
+  const conflictTypes = ['conflict', 'rejection', 'criticism'];
+  const consecutiveConflicts = recentEvents.length >= WITHDRAWAL_THRESHOLD.consecutiveConflicts &&
+    recentEvents.every(e => conflictTypes.includes(e.event));
+
+  if (state.hormones.cortisol >= WITHDRAWAL_THRESHOLD.cortisol && consecutiveConflicts) {
+    state.withdrawn = true;
+    state.withdrawnAt = Date.now();
+  }
+
+  return state;
+}
+
+// --- Circadian Rhythm Modifier ---
+
+function circadianModifier(hourOfDay) {
+  const modifiers = {};
+  
+  if (hourOfDay >= 6 && hourOfDay < 10) {
+    // Morning (6-10): adrenaline +0.1, dopamine +0.05, cortisol +0.1
+    modifiers.adrenaline = 0.1;
+    modifiers.dopamine = 0.05;
+    modifiers.cortisol = 0.1; // morning cortisol is normal
+  } else if (hourOfDay >= 10 && hourOfDay < 14) {
+    // Day (10-14): all normal, no modifiers
+  } else if (hourOfDay >= 14 && hourOfDay < 17) {
+    // After lunch (14-17): adrenaline -0.05, serotonin -0.03
+    modifiers.adrenaline = -0.05;
+    modifiers.serotonin = -0.03;
+  } else if (hourOfDay >= 17 && hourOfDay < 22) {
+    // Evening (17-22): adrenaline -0.1, serotonin +0.05, endorphin +0.05
+    modifiers.adrenaline = -0.1;
+    modifiers.serotonin = 0.05;
+    modifiers.endorphin = 0.05;
+  } else {
+    // Night (22-6): adrenaline -0.15, cortisol -0.05, energy decreases (melatonin effect)
+    modifiers.adrenaline = -0.15;
+    modifiers.cortisol = -0.05;
+  }
+  
+  return modifiers;
+}
+
+function applyCircadianModifier(hormones, baselines) {
+  const now = new Date();
+  const hourOfDay = now.getHours();
+  const modifiers = circadianModifier(hourOfDay);
+  
+  const adjusted = { ...hormones };
+  
+  for (const [hormone, modifier] of Object.entries(modifiers)) {
+    if (hormone in adjusted) {
+      const baseline = baselines[hormone] ?? HORMONES[hormone].baseline;
+      adjusted[hormone] = clamp(baseline + modifier, HORMONES[hormone].min, HORMONES[hormone].max);
+    }
+  }
+  
+  return adjusted;
+}
+
 // --- Helpers ---
 
 function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
@@ -197,6 +283,13 @@ function cmdRead(args) {
   if (!state) { console.error('No sensus-state.json. Run: node sensus.js init'); process.exit(1); }
 
   state = applyDecay(state, Date.now());
+  
+  // Apply circadian modifier AFTER decay
+  state.hormones = applyCircadianModifier(state.hormones, state.baselines);
+  
+  // Check withdrawal
+  state = checkWithdrawal(state);
+  
   saveState(state);
 
   const fmt = args.includes('--format') ? args[args.indexOf('--format') + 1] : 'json';
@@ -220,6 +313,7 @@ function cmdRead(args) {
 
     let line = `[sensus: ${parts.join(' ')}`;
     if (hotHormones.length) line += ` | ${hotHormones.join(' ')}`;
+    if (state.withdrawn) line += ' | WITHDRAWN';
     line += ']';
     console.log(line);
 
@@ -275,6 +369,10 @@ function cmdEvent(args) {
   }
 
   state.hormones = interact(state.hormones);
+  
+  // Apply circadian modifier AFTER event and interactions
+  state.hormones = applyCircadianModifier(state.hormones, state.baselines);
+  
   state.lastUpdated = Date.now();
 
   state.history.push({
@@ -286,6 +384,9 @@ function cmdEvent(args) {
   });
   if (state.history.length > MAX_HISTORY) state.history = state.history.slice(-MAX_HISTORY);
 
+  // Check withdrawal state
+  state = checkWithdrawal(state);
+
   saveState(state);
 
   const derived = deriveState(state.hormones);
@@ -293,6 +394,7 @@ function cmdEvent(args) {
     ok: true,
     event: eventType,
     intensity,
+    withdrawn: state.withdrawn || false,
     hormones: roundHormones(state.hormones),
     derived: { values: derived, labels: describeState(derived) },
   }, null, 2));
@@ -308,6 +410,7 @@ function cmdTick(args) {
   // Simulate passage of time
   const futureMs = state.lastUpdated + minutes * 60000;
   state = applyDecay(state, futureMs);
+  state = checkWithdrawal(state);
   saveState(state);
 
   const derived = deriveState(state.hormones);

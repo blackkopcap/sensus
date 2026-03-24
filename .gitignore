@@ -1,5 +1,9 @@
 sensus-state.json
 human-profile.json
 limbic-config.json
+behavioral-data.json
+activity-config.json
+activity-log.json
 *.skill
+*.backup.json
 node_modules/

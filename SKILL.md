@@ -53,12 +53,18 @@ Hormones interact: cortisol suppresses serotonin/dopamine, oxytocin buffers cort
 
 ```bash
 node sensus.js init [--baseline '{"dopamine":0.6}']  # Initialize
-node sensus.js read [--format prompt|json|full]       # Current state
-node sensus.js event --type <event> [--intensity N]   # Manual event
+node sensus.js read [--format prompt|json|full]       # Current state (with circadian)
+node sensus.js event --type <event> [--intensity N]   # Manual event (with circadian)
 node sensus.js tick [--minutes N]                     # Simulate time
 node sensus.js history [--limit N]                    # View log
 node sensus.js reset                                  # Reset to baseline
 ```
+
+**New Feature:** **Circadian Rhythm Modulation** — Hormones are adjusted based on time of day:
+- **Morning (6-10):** +adrenaline, +dopamine, +cortisol (natural morning cortisol peak)
+- **Afternoon (14-17):** -adrenaline, -serotonin (post-lunch dip)
+- **Evening (17-22):** -adrenaline, +serotonin, +endorphin (wind-down)  
+- **Night (22-6):** -adrenaline, -cortisol (sleep prep)
 
 **Derived states** (computed from hormones, not stored):
 - `mood` — overall positive/negative
@@ -71,15 +77,25 @@ node sensus.js reset                                  # Reset to baseline
 
 Analyzes messages via local LLM (Ollama), automatically:
 1. Classifies emotional tone and intent
-2. Fires hormone events with appropriate intensity
+2. Fires hormone events with appropriate intensity (with fuzzy matching)
 3. Records human profile observations
+4. Saves high-intensity events (≥0.7) to EchoVault memory
+5. Uses contextual analysis with time-of-day and current hormone state
 
 ```bash
 node limbic.js analyze "message text"              # Analyze + update
 node limbic.js analyze --stdin < message.txt       # From stdin
 node limbic.js profile [--format json|summary]     # View human profile
+node limbic.js consolidate                          # Analyze observations → traits/patterns
 node limbic.js configure [--model X] [--url Y]     # Change model
 ```
+
+**New Features:**
+
+- **Fuzzy Event Matching:** Unknown event types are mapped to valid ones (e.g., `thankfulness` → `gratitude`)
+- **Emotional Memory:** High-intensity events (≥0.7) auto-saved to EchoVault with `~/.pyenv/shims/memory`
+- **Profile Consolidation:** `consolidate` command analyzes all observations to extract consistent traits and patterns
+- **Contextual Analysis:** Mediator receives time-of-day, current hormone state, and recent observations for better analysis
 
 Default model: `gemma3:1b` (~815MB, runs on CPU, ~200ms per analysis).
 
