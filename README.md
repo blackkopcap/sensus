@@ -67,13 +67,26 @@ node scripts/sensus.js tick --minutes 120
 
 ## Usage with OpenClaw
 
-Install as a skill:
+### Install from GitHub
 
 ```bash
-openclaw skills install sensus.skill
+# Clone into your workspace
+cd ~/.openclaw/workspace
+git clone https://github.com/blackkopcap/sensus.git
+
+# Run setup
+cd sensus
+bash scripts/setup.sh
+
+# Register as OpenClaw skill
+openclaw config set skills.load.extraDirs '["~/.openclaw/workspace/sensus"]'
 ```
 
-Or add to your agent's `AGENTS.md` / `SOUL.md`:
+After restart, sensus will appear in `openclaw skills list`.
+
+### Integration
+
+Add to your agent's `AGENTS.md` / `SOUL.md`:
 
 ```markdown
 ## Emotional State (Sensus)
