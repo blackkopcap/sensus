@@ -183,8 +183,8 @@ function applyCircadianModifier(hormones, baselines) {
   
   for (const [hormone, modifier] of Object.entries(modifiers)) {
     if (hormone in adjusted) {
-      const baseline = baselines[hormone] ?? HORMONES[hormone].baseline;
-      adjusted[hormone] = clamp(baseline + modifier, HORMONES[hormone].min, HORMONES[hormone].max);
+      // Apply modifier to CURRENT value, not baseline
+      adjusted[hormone] = clamp(adjusted[hormone] + modifier, HORMONES[hormone].min, HORMONES[hormone].max);
     }
   }
   

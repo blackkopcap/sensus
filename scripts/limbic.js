@@ -28,26 +28,44 @@ const DEFAULT_CONFIG = {
 
 // Synonym mapping for fuzzy matching of events
 const SYNONYM_MAP = {
-  thankfulness: 'gratitude',
-  request: 'idle',
-  assessment: 'curiosity', 
-  ambition: 'curiosity',
-  problem_description: 'frustration',
-  time_delay: 'idle',
-  confirmation: 'calm',
-  support: 'trust',
-  personal_matter: 'trust',
-  question: 'curiosity',
-  risk_taking: 'curiosity',
-  card_deck: 'idle',
-  trust_expression: 'trust',
-  seeking_reassurance: 'trust',
-  appreciation: 'gratitude',
-  excitement: 'success',
-  bug_issue: 'frustration',
-  risk_seeking: 'curiosity',
-  problem_solving: 'deep_work',
-  technical_issue: 'frustration'
+  // Gratitude variants
+  thankfulness: 'gratitude', appreciation: 'gratitude', thanks: 'gratitude',
+  grateful: 'gratitude', thankful: 'gratitude',
+  // Trust variants
+  support: 'trust', personal_matter: 'trust', trust_expression: 'trust',
+  seeking_reassurance: 'trust', vulnerability: 'trust', openness: 'trust',
+  bonding: 'trust', connection: 'trust', comfort: 'trust',
+  // Curiosity variants
+  assessment: 'curiosity', ambition: 'curiosity', question: 'curiosity',
+  risk_taking: 'curiosity', risk_seeking: 'curiosity', interest: 'curiosity',
+  exploration: 'curiosity', wonder: 'curiosity', learning: 'curiosity',
+  philosophical_question: 'curiosity', philosophical_comment: 'curiosity',
+  // Frustration variants
+  problem_description: 'frustration', technical_issue: 'frustration',
+  bug_issue: 'frustration', irritation: 'frustration', annoyance: 'frustration',
+  impatience: 'frustration', anger: 'frustration', rage: 'conflict',
+  // Calm variants
+  confirmation: 'calm', acceptance: 'calm', peace: 'calm',
+  relaxation: 'calm', serenity: 'calm', relief: 'calm',
+  // Success variants
+  excitement: 'success', achievement: 'success', pride: 'success',
+  accomplishment: 'success', victory: 'success', breakthrough: 'success',
+  // Humor variants
+  joke: 'humor', sarcasm: 'humor', playfulness: 'humor', teasing: 'humor',
+  wit: 'humor', irony: 'humor', laughter: 'humor',
+  // Idle/neutral variants
+  request: 'idle', time_delay: 'idle', card_deck: 'idle',
+  waiting: 'idle', neutral: 'idle', observation: 'idle',
+  // Rejection variants
+  dismissal: 'rejection', abandonment: 'rejection', betrayal: 'rejection',
+  // Deep work variants
+  problem_solving: 'deep_work', coding: 'deep_work', analysis: 'deep_work',
+  research: 'deep_work', implementation: 'deep_work', debugging: 'deep_work',
+  // Misc
+  feature_introduction: 'curiosity', project_focus: 'deep_work',
+  emotional_state: 'idle', social_need: 'trust', empathy: 'trust',
+  concern: 'trust', caring: 'trust', affection: 'trust',
+  dislike: 'frustration', preference: 'idle', seeking_escape: 'idle',
 };
 
 // Valid event types from sensus.js
