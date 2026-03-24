@@ -244,6 +244,134 @@ function normalizeEventType(eventType) {
   return null;
 }
 
+// --- Reaction Analysis ---
+
+function analyzeReactionPreference(message, userState, agentState) {
+  // Default configuration
+  const reactionConfig = {
+    enabled: true,
+    frequency: 0.7, // 70% chance to react vs reply
+    withdrawnReactionsOnly: true, // In withdrawal, only react, don't reply
+    commandsLowEnergyReact: true, // Simple commands + low energy = reaction only
+  };
+
+  // Load reaction config if exists
+  const reactionConfigFile = path.join(process.cwd(), 'reaction-config.json');
+  if (fs.existsSync(reactionConfigFile)) {
+    try {
+      const userConfig = JSON.parse(fs.readFileSync(reactionConfigFile, 'utf8'));
+      Object.assign(reactionConfig, userConfig);
+    } catch (e) {
+      // Use defaults on parse error
+    }
+  }
+
+  if (!reactionConfig.enabled) {
+    return {
+      shouldReact: false,
+      shouldReply: true,
+      reactionHint: null
+    };
+  }
+
+  // Parse agent state
+  const withdrawn = agentState.withdrawn || false;
+  const hormones = agentState.hormones || {};
+  const derived = agentState.derived || {};
+  
+  // Debug withdrawn state
+  if (reactionConfig.debug) {
+    console.error(`[DEBUG] withdrawn=${withdrawn}, cortisol=${hormones.cortisol}, agentState=`, JSON.stringify(agentState, null, 2));
+  }
+  
+  const mood = derived.values?.mood || 0;
+  const energy = derived.values?.energy || 0.5;
+  const warmth = derived.values?.warmth || 0.5;
+  const stress = derived.values?.stress || 0.5;
+
+  // Parse message context
+  const messageLength = message.length;
+  const isShort = messageLength < 20;
+  const isCommand = /^[\/!]/.test(message) || /^(сделай|выполни|покажи|найди|дай|открой|запусти|проверь|обнови)/i.test(message);
+  const isQuestion = /[?？]/.test(message) || /^(как|что|где|когда|почему|зачем|куда)/i.test(message);
+  const isThanks = /(спасибо|благодар|thanks|thx|thank you|отлично|супер|молодец|красавица)/i.test(message);
+  const isJoke = /(😄|😂|🤣|хах|лол|ржу|шучу|прикол|funny|haha|lol)/i.test(message);
+  const isCompliment = /(умница|красавица|well done|great|awesome|perfect|отлично|супер|крутые?)/i.test(message);
+
+  let shouldReact = false;
+  let shouldReply = true;
+  let reactionHint = null;
+
+  // WITHDRAWN state - only angry reactions, minimal replies
+  if (withdrawn) {
+    if (reactionConfig.withdrawnReactionsOnly) {
+      shouldReact = true;
+      shouldReply = false;
+      reactionHint = 'angry frustrated unamused rage disappointed annoyed';
+      return { shouldReact, shouldReply, reactionHint };
+    }
+  }
+
+  // Simple commands + low energy = confirming reactions
+  if (isCommand && isShort && energy < 0.4) {
+    shouldReact = Math.random() < 0.8; // 80% chance
+    shouldReply = !shouldReact || Math.random() < 0.3; // Maybe both
+    reactionHint = 'salute check mark thumbsup roger copy military';
+  }
+  // Thanks + high warmth = hearts and smiles  
+  else if (isThanks && warmth > 0.6) {
+    shouldReact = Math.random() < 0.9; // 90% chance
+    shouldReply = Math.random() < 0.4; // Maybe both
+    reactionHint = 'heart love smile happy grateful warm hug blush';
+  }
+  // Compliments + positive mood = happy reactions
+  else if (isCompliment && mood > 0.3) {
+    shouldReact = Math.random() < 0.85;
+    shouldReply = Math.random() < 0.5;
+    reactionHint = 'happy proud smile joy star sparkles party celebrating';
+  }
+  // Interesting questions = thinking reactions
+  else if (isQuestion && !isShort && derived.values?.focus > 0.4) {
+    shouldReact = Math.random() < 0.6;
+    shouldReply = true; // Questions usually need replies
+    reactionHint = 'thinking brain eyes curious pondering mind_blown idea';
+  }
+  // Jokes + positive mood = laughter 
+  else if (isJoke && mood > 0.1 && !withdrawn) {
+    shouldReact = Math.random() < 0.8;
+    shouldReply = Math.random() < 0.6;
+    reactionHint = 'laugh joy rofl funny wink playful giggle amused';
+  }
+  // High stress = minimal reactions
+  else if (stress > 0.6) {
+    shouldReact = Math.random() < 0.3;
+    shouldReply = true;
+    reactionHint = 'tired stressed overwhelmed busy working focus';
+  }
+  // Random reactions based on overall frequency
+  else {
+    shouldReact = Math.random() < reactionConfig.frequency * 0.5; // Lower base chance
+    shouldReply = true;
+    
+    // Choose reaction based on current emotional state
+    if (mood > 0.4 && warmth > 0.5) {
+      reactionHint = 'positive warm happy smile friendly';
+    } else if (energy > 0.7) {
+      reactionHint = 'energetic excited fire rocket power';
+    } else if (mood < -0.2) {
+      reactionHint = 'neutral meh shrug okay fine';
+    } else {
+      reactionHint = 'neutral check thumbsup okay understood';
+    }
+  }
+
+  return {
+    shouldReact,
+    shouldReply,
+    reactionHint
+  };
+}
+
 // --- Commands ---
 
 function getTimeOfDay() {
@@ -514,6 +642,54 @@ Based on these observations, update the profile with consistent traits and patte
   }
 }
 
+function cmdReactionPreference(args) {
+  // Extract --user parameter
+  let userId = null;
+  const userIdx = args.indexOf('--user');
+  if (userIdx !== -1 && args[userIdx + 1]) {
+    userId = args[userIdx + 1];
+  }
+
+  let message;
+  if (args.includes('--stdin')) {
+    message = fs.readFileSync('/dev/stdin', 'utf8').trim();
+  } else {
+    message = args.filter(a => !a.startsWith('--') && a !== userId).join(' ');
+  }
+
+  if (!message) {
+    console.error('Usage: node limbic.js reaction-preference "message text" [--user <id>]');
+    process.exit(1);
+  }
+
+  // Load current agent state
+  const currentState = execSensus('read --format json');
+  if (currentState.error) {
+    console.error('Failed to read sensus state:', currentState.error);
+    process.exit(1);
+  }
+
+  // Load user profile for context
+  const profile = loadProfile(userId);
+  
+  // Analyze reaction preference
+  const preference = analyzeReactionPreference(message, profile, currentState);
+  
+  console.log(JSON.stringify({
+    ok: true,
+    message: message.slice(0, 100),
+    userId: userId || null,
+    preference,
+    agentState: {
+      mood: currentState.derived?.labels?.mood,
+      energy: currentState.derived?.labels?.energy,
+      warmth: currentState.derived?.labels?.warmth,
+      stress: currentState.derived?.labels?.stress,
+      withdrawn: currentState.withdrawn || false
+    }
+  }, null, 2));
+}
+
 function cmdConfigure(args) {
   const cfg = loadConfig();
 
@@ -532,19 +708,21 @@ function cmdConfigure(args) {
 const [,, command, ...args] = process.argv;
 
 switch (command) {
-  case 'analyze':     cmdAnalyze(args); break;
-  case 'profile':     cmdProfile(args); break;
-  case 'consolidate': cmdConsolidate(args); break;
-  case 'configure':   cmdConfigure(args); break;
+  case 'analyze':             cmdAnalyze(args); break;
+  case 'profile':             cmdProfile(args); break;
+  case 'consolidate':         cmdConsolidate(args); break;
+  case 'reaction-preference': cmdReactionPreference(args); break;
+  case 'configure':           cmdConfigure(args); break;
   default:
     console.log(`Limbic — The Mediator (Amygdala)
 
 Usage:
-  node limbic.js analyze "message text" [--user <id>]     Analyze message, update hormones & profile
-  node limbic.js analyze --stdin [--user <id>]            Read message from stdin
+  node limbic.js analyze "message text" [--user <id>]         Analyze message, update hormones & profile
+  node limbic.js analyze --stdin [--user <id>]                Read message from stdin
   node limbic.js profile [--format json|summary] [--user <id>]  View human profile
-  node limbic.js consolidate [--user <id>]                Consolidate observations into traits/patterns
-  node limbic.js configure [--model X] [--url Y]          Configure LLM
+  node limbic.js consolidate [--user <id>]                    Consolidate observations into traits/patterns
+  node limbic.js reaction-preference "message" [--user <id>]  Get reaction vs reply preference
+  node limbic.js configure [--model X] [--url Y]              Configure LLM
 
 Default model: ${DEFAULT_CONFIG.model}
 Default Ollama: ${DEFAULT_CONFIG.ollamaUrl}`);

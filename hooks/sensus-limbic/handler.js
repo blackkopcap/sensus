@@ -58,6 +58,64 @@ function extractUserId(event) {
   return null;
 }
 
+function extractChannelInfo(event) {
+  // Extract channel/platform info for reaction support
+  const channelId = event.channelId || event.channel_id || event.data?.channelId;
+  const messageId = event.messageId || event.message_id || event.data?.messageId || event.id;
+  const platform = event.platform || event.data?.platform;
+  
+  return { channelId, messageId, platform };
+}
+
+function analyzeReactionPreference(messageText, userId) {
+  return new Promise((resolve, reject) => {
+    if (!fs.existsSync(LIMBIC_SCRIPT)) {
+      return reject(new Error(`Limbic script not found: ${LIMBIC_SCRIPT}`));
+    }
+    
+    const args = ['reaction-preference', messageText];
+    if (userId) {
+      args.push('--user', userId);
+    }
+    
+    log('debug', `Analyzing reaction preference for: "${messageText.slice(0, 50)}..."`);
+    
+    const child = spawn('node', [LIMBIC_SCRIPT, ...args], {
+      cwd: SENSUS_ROOT,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: process.env
+    });
+    
+    let stdout = '';
+    let stderr = '';
+    
+    child.stdout.on('data', (data) => {
+      stdout += data.toString();
+    });
+    
+    child.stderr.on('data', (data) => {
+      stderr += data.toString();
+    });
+    
+    child.on('close', (code) => {
+      if (code !== 0) {
+        return reject(new Error(`Reaction analysis failed with code ${code}: ${stderr}`));
+      }
+      
+      try {
+        const result = JSON.parse(stdout);
+        resolve(result);
+      } catch (error) {
+        reject(new Error(`Failed to parse reaction analysis result: ${error.message}`));
+      }
+    });
+    
+    child.on('error', (error) => {
+      reject(error);
+    });
+  });
+}
+
 function analyzeLimbic(messageText, userId) {
   return new Promise((resolve, reject) => {
     // Validate inputs
@@ -121,6 +179,7 @@ async function handleMessage(event) {
     }
     
     const userId = extractUserId(event);
+    const channelInfo = extractChannelInfo(event);
     
     // Skip very short messages (likely bot commands or noise)
     if (messageText.length < 3) {
@@ -134,9 +193,41 @@ async function handleMessage(event) {
       return;
     }
     
-    // Analyze through limbic system
-    const pid = await analyzeLimbic(messageText, userId);
-    log('info', `Started limbic analysis (PID: ${pid}) for ${userId || 'default'}`);
+    // Analyze through limbic system (fire-and-forget)
+    analyzeLimbic(messageText, userId).then((pid) => {
+      log('info', `Started limbic analysis (PID: ${pid}) for ${userId || 'default'}`);
+    }).catch((error) => {
+      log('error', 'Limbic analysis failed', error);
+    });
+    
+    // Analyze reaction preference
+    try {
+      const reactionAnalysis = await analyzeReactionPreference(messageText, userId);
+      
+      if (reactionAnalysis.ok && reactionAnalysis.preference) {
+        const { shouldReact, shouldReply, reactionHint } = reactionAnalysis.preference;
+        
+        // Output reaction recommendation for main agent
+        const recommendation = {
+          type: 'sensus-reaction-recommendation',
+          channelInfo,
+          userId,
+          messageText: messageText.slice(0, 100),
+          shouldReact,
+          shouldReply,
+          reactionHint,
+          agentState: reactionAnalysis.agentState
+        };
+        
+        // Write recommendation to stdout for main agent
+        console.log(JSON.stringify(recommendation, null, 2));
+        log('info', `Reaction recommendation: react=${shouldReact}, reply=${shouldReply}, hint="${reactionHint}"`);
+      }
+      
+    } catch (error) {
+      log('error', 'Reaction preference analysis failed', error);
+      // Continue with normal flow
+    }
     
   } catch (error) {
     log('error', 'Hook handler error', error);

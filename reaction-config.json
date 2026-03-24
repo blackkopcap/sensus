@@ -1,0 +1,89 @@
+{
+  "enabled": true,
+  "frequency": 0.7,
+  "withdrawnReactionsOnly": true,
+  "commandsLowEnergyReact": true,
+  "debug": false,
+  "categories": {
+    "angry": [
+      "angry",
+      "rage",
+      "unamused",
+      "disappointed",
+      "annoyed",
+      "frustrated"
+    ],
+    "confirming": [
+      "salute",
+      "check",
+      "white_check_mark",
+      "thumbsup",
+      "roger",
+      "ok_hand"
+    ],
+    "loving": [
+      "heart",
+      "two_hearts",
+      "heartpulse",
+      "sparkling_heart",
+      "purple_heart",
+      "smile",
+      "smiling_face_with_3_hearts"
+    ],
+    "happy": [
+      "smile",
+      "grin",
+      "joy",
+      "star2",
+      "sparkles",
+      "tada",
+      "partying_face"
+    ],
+    "thinking": [
+      "thinking_face",
+      "brain",
+      "eyes",
+      "mag",
+      "bulb",
+      "exploding_head"
+    ],
+    "laughing": [
+      "joy",
+      "rofl",
+      "laughing",
+      "sweat_smile",
+      "wink",
+      "stuck_out_tongue_winking_eye"
+    ],
+    "tired": [
+      "tired_face",
+      "weary",
+      "sleeping",
+      "yawn",
+      "coffee",
+      "hourglass_flowing_sand"
+    ],
+    "positive": [
+      "thumbsup",
+      "smile",
+      "slightly_smiling_face",
+      "relaxed",
+      "ok_hand"
+    ],
+    "energetic": [
+      "fire",
+      "rocket",
+      "zap",
+      "muscle",
+      "star-struck",
+      "boom"
+    ],
+    "neutral": [
+      "neutral_face",
+      "shrug",
+      "ok_hand",
+      "white_check_mark",
+      "eyes"
+    ]
+  }
+}

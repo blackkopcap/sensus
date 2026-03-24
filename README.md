@@ -137,6 +137,41 @@ Recent observations:
 
 See [references/profiling.md](references/profiling.md) for details.
 
+## 🎭 Dynamic Reaction System
+
+NEW: Instead of always replying with text, sensus can recommend emoji reactions based on emotional state and message context.
+
+```bash
+# Test reaction analysis
+node scripts/reactions.js test "спасибо!" --user user123
+# → {"shouldReact": true, "shouldReply": false, "reactionHint": "heart love smile grateful"}
+
+# Configure reaction behavior
+node scripts/reactions.js configure --enabled true --frequency 0.8
+
+# Check current settings
+node scripts/reactions.js status
+```
+
+### How It Works
+
+The system analyzes:
+- **Message context**: command, thanks, question, joke, compliment
+- **Agent state**: mood, energy, warmth, stress levels  
+- **Relationship**: user history and trust level
+- **Special modes**: WITHDRAWN state (angry reactions only)
+
+Example outputs:
+- Simple command + low energy → ✅ 🫡 👍  
+- Thanks + high warmth → ❤️ 😊 🤗
+- Interesting question → 🤔 👀 🧠
+- Jokes + positive mood → 😂 😄 😉
+- WITHDRAWN state → 😠 😤 😒
+
+### Integration
+
+Works automatically with the OpenClaw hook. The limbic mediator outputs reaction recommendations that your main agent can use to choose appropriate emoji responses instead of verbose text replies.
+
 ## Customization
 
 Tune baselines to match your agent's personality:

@@ -339,6 +339,7 @@ function cmdRead(args) {
       hormones: roundHormones(state.hormones),
       baselines: state.baselines,
       derived: { values: derived, labels },
+      withdrawn: state.withdrawn || false,
       lastUpdated: new Date(state.lastUpdated).toISOString(),
       historyLength: state.history.length,
     }, null, 2));
@@ -347,6 +348,7 @@ function cmdRead(args) {
     console.log(JSON.stringify({
       hormones: roundHormones(state.hormones),
       derived: { values: derived, labels },
+      withdrawn: state.withdrawn || false,
       lastUpdated: new Date(state.lastUpdated).toISOString(),
     }, null, 2));
   }
