@@ -1,0 +1,5 @@
+sensus-state.json
+human-profile.json
+limbic-config.json
+*.skill
+node_modules/
