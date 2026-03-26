@@ -36,10 +36,10 @@ const MAX_HISTORY = 200;
 // --- Hormone Model ---
 
 const HORMONES = {
-  dopamine:   { min: 0, max: 1, baseline: 0.5, halfLifeH: 2,   desc: 'motivation, reward, curiosity' },
-  serotonin:  { min: 0, max: 1, baseline: 0.5, halfLifeH: 24,  desc: 'baseline mood, stability' },
-  cortisol:   { min: 0, max: 1, baseline: 0.2, halfLifeH: 6,   desc: 'stress, pressure, overload' },
-  oxytocin:   { min: 0, max: 1, baseline: 0.3, halfLifeH: 48,  desc: 'trust, bonding, warmth' },
+  dopamine:   { min: 0, max: 1, baseline: 0.5, halfLifeH: 1.5, desc: 'motivation, reward, curiosity' },
+  serotonin:  { min: 0, max: 1, baseline: 0.5, halfLifeH: 4,   desc: 'baseline mood, stability' },
+  cortisol:   { min: 0, max: 1, baseline: 0.2, halfLifeH: 3,   desc: 'stress, pressure, overload' },
+  oxytocin:   { min: 0, max: 1, baseline: 0.3, halfLifeH: 8,   desc: 'trust, bonding, warmth' },
   adrenaline: { min: 0, max: 1, baseline: 0.1, halfLifeH: 0.5, desc: 'energy, urgency, focus' },
   endorphin:  { min: 0, max: 1, baseline: 0.2, halfLifeH: 1,   desc: 'euphoria, humor, relief' },
 };
@@ -160,45 +160,31 @@ function checkWithdrawal(state) {
 
 // --- Circadian Rhythm Modifier ---
 
-function circadianModifier(hourOfDay) {
-  const modifiers = {};
-  
+// Circadian: small nudges toward time-of-day baselines (not additive!)
+function circadianTarget(hourOfDay) {
   if (hourOfDay >= 6 && hourOfDay < 10) {
-    // Morning (6-10): adrenaline +0.1, dopamine +0.05, cortisol +0.1
-    modifiers.adrenaline = 0.1;
-    modifiers.dopamine = 0.05;
-    modifiers.cortisol = 0.1; // morning cortisol is normal
+    return { adrenaline: 0.3, dopamine: 0.6, cortisol: 0.25, serotonin: 0.5 };
   } else if (hourOfDay >= 10 && hourOfDay < 14) {
-    // Day (10-14): all normal, no modifiers
+    return { adrenaline: 0.2, dopamine: 0.55, cortisol: 0.2, serotonin: 0.5 };
   } else if (hourOfDay >= 14 && hourOfDay < 17) {
-    // After lunch (14-17): adrenaline -0.05, serotonin -0.03
-    modifiers.adrenaline = -0.05;
-    modifiers.serotonin = -0.03;
+    return { adrenaline: 0.15, dopamine: 0.45, cortisol: 0.15, serotonin: 0.45 };
   } else if (hourOfDay >= 17 && hourOfDay < 22) {
-    // Evening (17-22): adrenaline -0.1, serotonin +0.05, endorphin +0.05
-    modifiers.adrenaline = -0.1;
-    modifiers.serotonin = 0.05;
-    modifiers.endorphin = 0.05;
+    return { adrenaline: 0.1, dopamine: 0.5, cortisol: 0.1, serotonin: 0.55, endorphin: 0.35 };
   } else {
-    // Night (22-6): adrenaline -0.15, cortisol -0.05, energy decreases (melatonin effect)
-    modifiers.adrenaline = -0.15;
-    modifiers.cortisol = -0.05;
+    return { adrenaline: 0.05, dopamine: 0.4, cortisol: 0.05, serotonin: 0.45 };
   }
-  
-  return modifiers;
 }
 
 function applyCircadianModifier(hormones, baselines) {
   const now = new Date();
-  const hourOfDay = now.getHours();
-  const modifiers = circadianModifier(hourOfDay);
-  
+  const targets = circadianTarget(now.getHours());
   const adjusted = { ...hormones };
   
-  for (const [hormone, modifier] of Object.entries(modifiers)) {
+  // Nudge 10% toward circadian target (gentle pull, not override)
+  for (const [hormone, target] of Object.entries(targets)) {
     if (hormone in adjusted) {
-      // Apply modifier to CURRENT value, not baseline
-      adjusted[hormone] = clamp(adjusted[hormone] + modifier, HORMONES[hormone].min, HORMONES[hormone].max);
+      adjusted[hormone] += (target - adjusted[hormone]) * 0.1;
+      adjusted[hormone] = clamp(adjusted[hormone], HORMONES[hormone].min, HORMONES[hormone].max);
     }
   }
   

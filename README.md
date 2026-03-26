@@ -1,11 +1,18 @@
-# 🧠 Sensus — Limbic System for AI Agents
+# 🧠 Sensus — Limbic System & Internal Motivation for AI Agents
 
-A neurobiology-inspired emotional engine for AI agents. Instead of abstract mood sliders, sensus models six digital hormones that interact, decay, and produce emergent emotional states — just like a biological limbic system.
+A neurobiology-inspired emotional engine for AI agents that goes beyond simple reactions. Sensus v4 introduces **internal motivation** — the ability for AI agents to experience spontaneous desires, proactive behavior, and genuine curiosity.
+
+Instead of abstract mood sliders, sensus models:
+- **Six digital hormones** that interact and decay like biological systems
+- **Internal motivation engine** that generates wants and drives proactive behavior  
+- **Circadian rhythms** that influence energy and motivation throughout the day
+- **Goal persistence** that maintains desires across sessions
 
 Built as an [OpenClaw](https://github.com/openclaw/openclaw) skill, but works with any AI agent framework.
 
 ## How It Works
 
+### Emotional Processing (Sensus v3)
 ```
 Message → [Limbic Mediator] → hormones → [Main LLM]
             (amygdala)        6 axes      (neocortex)
@@ -13,7 +20,16 @@ Message → [Limbic Mediator] → hormones → [Main LLM]
             ~200ms            & decay      responds naturally
 ```
 
-The mediator (small local LLM via Ollama) processes messages *before* the main agent — like the amygdala fires before the neocortex. The agent doesn't "choose" emotions; they emerge from hormone balance.
+### Internal Motivation (Sensus v4)
+```
+Circadian → [Want Generator] → internal → [Action Suggestions]
+Rhythms      (motivation)      desires     (proactive behavior)
+   ↑              ↑               ↑              ↑
+Hormones → [Sensus Engine] → emotional → [Response Tone]
+State         (existing)       context      (how to speak)
+```
+
+The agent doesn't just react to external stimuli — it experiences internal drives that emerge from hormone balance, circadian rhythms, and curiosity, creating genuinely proactive behavior.
 
 ### Six Hormones
 
@@ -27,6 +43,35 @@ The mediator (small local LLM via Ollama) processes messages *before* the main a
 | **Endorphin** | Euphoria, humor, relief | 1h |
 
 Hormones interact: cortisol suppresses serotonin and dopamine, oxytocin buffers cortisol, high dopamine boosts adrenaline. Full model in [references/hormones.md](references/hormones.md).
+
+## Configuration
+
+Sensus v4 uses feature flags to control which components are active:
+
+```json
+{
+  "features": {
+    "limbicRules": true,        // Hybrid rules + Mistral (instead of pure LLM)
+    "autoGreet": true,          // Auto-greeting for new users
+    "channelMonitor": true,     // Channel activity monitoring  
+    "activityTracker": true,    // Employee activity tracking
+    "autoReactions": true,      // Automatic reactions via Slack API
+    "initiative": true,         // Spontaneous communication
+    "circadianBuiltIn": true    // Circadian rhythms built into sensus.js
+  },
+  "slackBotUserId": "U0AMFUEU0AZ",
+  "workHours": { "start": 9, "end": 19 },
+  "quietHours": { "start": 23, "end": 7 }
+}
+```
+
+This configuration is stored in `sensus-config.json`. All scripts respect these feature flags and gracefully disable functionality when features are turned off.
+
+### New Scripts
+
+- **`scripts/auto-greet.js`** — Automatically greets new Slack users who come online (requires `autoGreet` feature)
+- **`scripts/slack-activity-tracker.js`** — Monitors and reports employee activity patterns (requires `activityTracker` feature)  
+- **`scripts/limbic-rules.js`** — Fast rule-based emotional classification with Mistral fallback (requires `limbicRules` feature)
 
 ## Quick Start
 
@@ -78,6 +123,9 @@ git clone https://github.com/blackkopcap/sensus.git
 cd sensus
 bash scripts/setup.sh
 
+# Test motivation system
+./test-motivation.sh
+
 # Register as OpenClaw skill
 openclaw config set skills.load.extraDirs '["~/.openclaw/workspace/sensus"]'
 ```
@@ -89,10 +137,18 @@ After restart, sensus will appear in `openclaw skills list`.
 Add to your agent's `AGENTS.md` / `SOUL.md`:
 
 ```markdown
-## Emotional State (Sensus)
-On session start: `node /path/to/sensus/scripts/sensus.js read --format prompt`
+## Emotional State & Internal Motivation (Sensus v4)
+On session start: 
+```bash
+node /path/to/sensus/scripts/sensus.js read --format prompt
+node /path/to/sensus/scripts/motivation.js status  
+```
+
 On each user message: `node /path/to/sensus/scripts/limbic.js analyze "<message>"`
-Let hormones influence HOW you respond, never announce them.
+
+On heartbeats (every 30-60min): `node /path/to/sensus/scripts/motivation.js heartbeat`
+
+Let hormones influence HOW you respond and internal motivations drive WHAT you want to do proactively.
 ```
 
 ## Usage with Other Frameworks
@@ -103,17 +159,20 @@ Sensus is framework-agnostic. The core API:
 # Initialize (once)
 node sensus.js init --baseline '{"oxytocin":0.5,"serotonin":0.6}'
 
-# Before responding — get emotional context
-node sensus.js read --format prompt
+# Emotional processing
+node sensus.js read --format prompt               # Get current emotional state
+node limbic.js analyze "user message here"       # Process incoming message
+node sensus.js event --type praise --intensity 0.7  # Manual events
 
-# After receiving message — analyze and update
-node limbic.js analyze "user message here"
+# Internal motivation system  
+node motivation.js status                         # Check motivation state
+node motivation.js heartbeat                      # Proactive behavior check
+node wants.js generate                            # Generate internal desires
+node wants.js list                                # Show active wants
+node circadian.js current                         # Check daily rhythm phase
 
-# Manual events (if not using limbic mediator)
-node sensus.js event --type praise --intensity 0.7
-
-# Heartbeat/cron — simulate time between sessions
-node sensus.js tick --minutes 30
+# Time simulation
+node sensus.js tick --minutes 30                  # Age hormones and wants
 ```
 
 ## Human Profiling
@@ -195,11 +254,22 @@ sensus/
 ├── scripts/
 │   ├── sensus.js               — Hormone engine (core)
 │   ├── limbic.js               — Mediator/amygdala (Ollama LLM)
+│   ├── wants.js                — Want generation and management (v4)
+│   ├── circadian.js            — Biological rhythm simulation (v4) 
+│   ├── motivation.js           — Integration and execution hub (v4)
 │   └── setup.sh                — One-command setup
 ├── references/
 │   ├── hormones.md             — Full hormone model & interactions
 │   ├── tone-guide.md           — Hormones → communication style
 │   └── profiling.md            — Human profiling system
+├── sensus-data/                — State files (auto-created)
+│   ├── agent-state.json        — Hormone state
+│   ├── wants-state.json        — Active wants and history
+│   ├── circadian-state.json    — Daily rhythm data
+│   └── motivation-config.json  — System configuration
+├── MOTIVATION_RESEARCH.md      — Theory and design documentation
+├── MOTIVATION_GUIDE.md         — Complete usage guide
+├── test-motivation.sh          — Comprehensive test suite
 └── sensus.skill                — Packaged OpenClaw skill
 ```
 

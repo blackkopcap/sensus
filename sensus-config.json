@@ -1,0 +1,20 @@
+{
+  "features": {
+    "limbicRules": true,
+    "autoGreet": true,
+    "channelMonitor": true,
+    "activityTracker": true,
+    "autoReactions": true,
+    "initiative": true,
+    "circadianBuiltIn": true
+  },
+  "slackBotUserId": "U0AMFUEU0AZ",
+  "workHours": {
+    "start": 9,
+    "end": 19
+  },
+  "quietHours": {
+    "start": 23,
+    "end": 7
+  }
+}
