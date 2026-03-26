@@ -42,6 +42,7 @@ const HORMONES = {
   oxytocin:   { min: 0, max: 1, baseline: 0.3, halfLifeH: 8,   desc: 'trust, bonding, warmth' },
   adrenaline: { min: 0, max: 1, baseline: 0.1, halfLifeH: 0.5, desc: 'energy, urgency, focus' },
   endorphin:  { min: 0, max: 1, baseline: 0.2, halfLifeH: 1,   desc: 'euphoria, humor, relief' },
+  melatonin:  { min: 0, max: 1, baseline: 0.1, halfLifeH: 2,   desc: 'sleep, rest, low energy at night' },
 };
 
 // Event → hormone deltas (at intensity=0.5)
@@ -163,15 +164,15 @@ function checkWithdrawal(state) {
 // Circadian: small nudges toward time-of-day baselines (not additive!)
 function circadianTarget(hourOfDay) {
   if (hourOfDay >= 6 && hourOfDay < 10) {
-    return { adrenaline: 0.3, dopamine: 0.6, cortisol: 0.25, serotonin: 0.5 };
+    return { adrenaline: 0.3, dopamine: 0.6, cortisol: 0.25, serotonin: 0.5, melatonin: 0.05 };
   } else if (hourOfDay >= 10 && hourOfDay < 14) {
-    return { adrenaline: 0.2, dopamine: 0.55, cortisol: 0.2, serotonin: 0.5 };
+    return { adrenaline: 0.2, dopamine: 0.55, cortisol: 0.2, serotonin: 0.5, melatonin: 0.05 };
   } else if (hourOfDay >= 14 && hourOfDay < 17) {
-    return { adrenaline: 0.15, dopamine: 0.45, cortisol: 0.15, serotonin: 0.45 };
+    return { adrenaline: 0.15, dopamine: 0.45, cortisol: 0.15, serotonin: 0.45, melatonin: 0.1 };
   } else if (hourOfDay >= 17 && hourOfDay < 22) {
-    return { adrenaline: 0.1, dopamine: 0.5, cortisol: 0.1, serotonin: 0.55, endorphin: 0.35 };
+    return { adrenaline: 0.1, dopamine: 0.5, cortisol: 0.1, serotonin: 0.55, endorphin: 0.35, melatonin: 0.3 };
   } else {
-    return { adrenaline: 0.05, dopamine: 0.4, cortisol: 0.05, serotonin: 0.45 };
+    return { adrenaline: 0.05, dopamine: 0.4, cortisol: 0.05, serotonin: 0.45, melatonin: 0.7 };
   }
 }
 
